@@ -1,0 +1,55 @@
+[workspace]
+name = "the-witness-head-tracking"
+version = "0.0.0"
+description = "Head tracking mod for The Witness via OpenTrack UDP"
+channels = ["conda-forge"]
+platforms = ["win-64"]
+
+[tasks]
+sync = "git submodule update --remote cameraunlock-core"
+
+# No -G: let CMake auto-detect the installed Visual Studio generator. Pinning
+# "Visual Studio 17 2022" broke on CI once the windows runner image moved to
+# VS 2026 (VS 17 absent); auto-detect picks whatever VS the machine has.
+setup = { cmd = """
+    powershell -NoProfile -Command "if (-not (Test-Path 'build')) { cmake -B build -A x64 } else { Write-Host 'Build directory exists, skipping setup' -ForegroundColor Yellow }"
+""" }
+
+build         = { cmd = "cmake --build build --config Debug",   depends-on = ["setup"] }
+build-release = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
+
+test = { cmd = "ctest --test-dir build -C Release --output-on-failure", depends-on = ["build-release"] }
+
+deploy  = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy.ps1 Debug",   depends-on = ["build"] }
+install = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy.ps1 Release", depends-on = ["build-release"] }
+
+detect-game = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/detect-game.ps1" }
+
+# Shim-only mod: the DLL is itself the system-DLL proxy the game loads, so there
+# is no vendored loader to refresh. Kept as a no-op for parity with the rest of
+# the catalogue; nothing depends on it, here or anywhere else.
+update-deps = "powershell -NoProfile -Command \"Write-Host 'No vendored dependencies to update (shim-only mod).'\""
+
+uninstall     = { cmd = "cmd /c scripts\\uninstall.cmd" }
+uninstall-all = { cmd = "cmd /c scripts\\uninstall.cmd --force" }
+
+clean     = { cmd = """powershell -NoProfile -Command "if (Test-Path 'build')   { Remove-Item 'build'   -Recurse -Force }" """ }
+clean-all = { cmd = """powershell -NoProfile -Command "if (Test-Path 'build')   { Remove-Item 'build'   -Recurse -Force }; if (Test-Path 'release') { Remove-Item 'release' -Recurse -Force }" """ }
+
+# The fleet-wide gates. Neither was reachable from this repo, so nothing ran
+# them: conformance covers the install wrapper, the CRLF endings, the action
+# pins and the README rules, and validate-manifest covers launcher-manifest.json
+# against the ZIP it describes. scripts/conformance.ps1 wraps core's and
+# documents the single finding it tolerates.
+conformance = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/conformance.ps1" }
+validate-manifest = { cmd = "node cameraunlock-core/scripts/validate-manifest.mjs" }
+validate-notices = { cmd = "node cameraunlock-core/scripts/validate-notices.mjs" }
+
+# The nightly is reachable through `release nightly` as well; this is the name
+# the fleet's tooling looks for.
+release-nightly = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-nightly.ps1" }
+
+package = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release"] }
+release = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1" }
+
+[dependencies]
