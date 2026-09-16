@@ -19,6 +19,7 @@ $ProgressPreference    = 'SilentlyContinue'
 
 $scriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Split-Path -Parent $scriptDir
+Import-Module (Join-Path $projectRoot 'cameraunlock-core\powershell\ModDeployment.psm1') -Force
 
 Import-Module (Join-Path $projectRoot 'cameraunlock-core\powershell\GamePathDetection.psm1') -Force
 
@@ -48,16 +49,10 @@ $exeDir = $gamePath
 $existing = Join-Path $exeDir $modDllName
 $backup   = Join-Path $exeDir $backupName
 
-# Decided by CONTENT, the same way install-body-shim.cmd decides it with fc /b.
-# Backing up whatever is there enshrines OUR shim as the original the moment the
-# backup goes missing - a half-finished uninstall, or a hand-deleted file - and
-# the shim then loads itself as the real OpenVR DLL while the game's own copy is
-# gone for good.
+# A previous build has different bytes but must never become the original.
 if ((Test-Path $existing) -and -not (Test-Path $backup)) {
-    $existingHash = (Get-FileHash -Path $existing -Algorithm SHA256).Hash
-    $builtHash    = (Get-FileHash -Path $builtDll -Algorithm SHA256).Hash
-    if ($existingHash -eq $builtHash) {
-        Write-Host "openvr_api.dll in the game folder is already this build - not backing it up." -ForegroundColor Yellow
+    if (Test-FileContainsMarker -FilePath $existing -Marker 'TheWitnessHeadTracking') {
+        Write-Host "openvr_api.dll in the game folder is already this mod - not backing it up." -ForegroundColor Yellow
     } else {
         Copy-Item -Path $existing -Destination $backup -Force
         Write-Host "Backed up original openvr_api.dll -> openvr_api.dll.backup" -ForegroundColor Green
