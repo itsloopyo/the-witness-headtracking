@@ -127,7 +127,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## cameraunlock-core
 
-- **Version:** `ee8cc72899932c60c8fe539fcb6e18db408d1d96`
+- **Version:** `c480d8a8177753966a7d33b857f1db12f5e9fe39`
 - **License:** MIT
 - **Upstream:** https://github.com/itsloopyo/cameraunlock-core
 - **Usage:** Supplies the tracker receiver, the pose processing pipeline and
