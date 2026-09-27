@@ -5,6 +5,10 @@
 //              code, the only published build (oracle/oracle_reader.cpp)
 //   Import     the frozen reader in src/legacy_config/, and the startup code of
 //              the commit that froze it
+//   Migration  the config owner's Load in a folder holding only the input as
+//              HeadTracking.ini, which imports it through config::Import into a
+//              new CameraUnlock.ini, then this build's startup code on what the
+//              session runs on
 //
 // Comparison 1, oracle against import, is what a player sees change that the
 // conversion did not cause: commits since a18847d that change how the file is
@@ -13,6 +17,35 @@
 // source either reader compiles holds the same bytes at a18847d's pin and at this
 // repo's (CMakeLists.txt pins them), so the comparison may find no difference at
 // all, floats bit for bit.
+//
+// Comparison 2, import against migration, is the proof for the migration: no
+// difference but the approved ones. The dev build's reader had no sensitivity,
+// inversion, reticle, aim or pivot setting, and it refused every hotkey code
+// that is not a bindable key, bare modifiers included, so the import drops
+// nothing. The reader keeps every value inside what the canonical rows hold,
+// so nothing else may differ, the no-file input included.
+//
+// A row the player never changed from what a18847d shipped follows
+// Defaults.ini: the import lists it in follows_defaults_ini and the migration
+// writes it `default`, the tracking mode pair as one unit. The test derives that
+// list from what the import read, a row whose every observed value is
+// a18847d's default, and holds the import's list to it on every input. One
+// such row differs from the built-in value: a18847d shipped the lean clamp off
+// pending verification in game, and an untouched CollisionEnabled=false takes
+// the schema's true (approved change follows_default). A player who set it true
+// keeps true.
+//
+// Each input migrates three times: over a Defaults.ini the owner creates with
+// the built-in values, from a read-only HeadTracking.ini, and over a
+// Defaults.ini that differs from the built-in value on every global row the
+// table binds. Over each, a row the player never changed is `default` and takes
+// that Defaults.ini's value, and a changed row keeps the player's. After every
+// load HeadTracking.ini keeps its bytes, write time and attributes, and the
+// folder holds it and CameraUnlock.ini and nothing else. The distinct migrated
+// files are written beside the executable under migrated/, for
+// lint-migrated.mjs to run core's canonical config lint over. The published
+// file, an empty file and no file at all list every row and migrate to the
+// committed file, byte for byte.
 //
 // Inputs: the dev build is the one published build. Its installer ZIP shipped
 // plugins/HeadTracking.ini for install.cmd to seed, its launcher manifest seeded
@@ -33,24 +66,33 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "core/config.h"
 #include "legacy_config/legacy_config.h"
 #include "oracle/oracle_reader.h"
 
+#include "cameraunlock/config/canonical_ini.h"
+#include "cameraunlock/config/config_owner.h"
 #include "cameraunlock/config/legacy_import.h"
 #include "cameraunlock/config/testing/ini_mutations.h"
+#include "cameraunlock/input/key_bindings.h"
+#include "cameraunlock/tracking/tracking_mode.h"
 
 namespace {
 
 namespace fs = std::filesystem;
 namespace cfg = cameraunlock::config;
+namespace config = TWHT::config;
 namespace legacy = TWHT::legacy;
 namespace testing = cameraunlock::config::testing;
+using TWHT::Config;
+using cfg::schema::Concept;
 
 int g_failures = 0;
 int g_checks = 0;
@@ -113,13 +155,24 @@ public:
 
     fs::path game() const { return root_ / "game"; }
     fs::path legacy() const { return game() / "HeadTracking.ini"; }
+    fs::path canonical() const { return game() / "CameraUnlock.ini"; }
+    fs::path defaults() const { return root_ / "global" / "Defaults.ini"; }
 
     void WriteLegacy(const std::string& bytes) const { WriteFileBytes(legacy(), bytes); }
+
+    void WriteDefaults(const std::string& bytes) const {
+        fs::create_directories(defaults().parent_path());
+        WriteFileBytes(defaults(), bytes);
+    }
 
     std::set<std::string> Names() const {
         std::set<std::string> names;
         for (const auto& entry : fs::directory_iterator(game())) names.insert(entry.path().filename().string());
         return names;
+    }
+
+    cfg::ConfigOwnerOptions<Config> Options() const {
+        return config::OwnerOptions(game(), cfg::DefaultsFile::At(defaults().wstring()));
     }
 
 private:
@@ -221,6 +274,44 @@ Record ObserveImport(const legacy::Config& c) {
     return ObserveOracle(p);
 }
 
+// The settings a session runs on through this build's startup code
+// (Mod::Initialize, Mod::ApplyConfigToSession, HotkeyHandler::Start and
+// CameraHook::ConfigureLeanClamp): the position settings
+// config::ToPositionSettings builds, the smoothing pair, the mode from the pair,
+// the yaw mode from WorldSpaceYaw, the lean clamp's settings, and each hotkey
+// list through ParseKeyBindings and RegisterKeyBindings.
+Record ObserveCanonical(const Config& c) {
+    twht_oracle::Published p;
+    p.udp_port = c.udpPort;
+    p.tracking_enabled = c.enableOnStartup;
+    p.world_yaw = c.worldSpaceYaw;
+    p.log_to_file = c.logToFile;
+    p.log_diagnostics = c.logDiagnostics;
+    const cameraunlock::PositionSettings position = config::ToPositionSettings(c);
+    p.limit_x = position.limit_x;
+    p.limit_y = position.limit_y;
+    p.limit_y_down = position.limit_y_down;
+    p.limit_z = position.limit_z;
+    p.limit_z_back = position.limit_z_back;
+    p.local_smoothing = c.localSmoothing;
+    p.remote_smoothing = c.remoteSmoothing;
+    p.mode = static_cast<int>(config::StartupTrackingMode(c));
+    p.collision_enabled = c.collisionEnabled;
+    p.collision_margin = c.collisionMargin;
+    p.collision_release_smoothing = c.collisionReleaseSmoothing;
+    const std::pair<int, const std::string*> lists[] = {{twht_oracle::kToggle, &c.toggleKey},
+                                                        {twht_oracle::kCycleMode, &c.cycleTrackingModeKey},
+                                                        {twht_oracle::kYawMode, &c.yawModeKey}};
+    for (const auto& [action, list] : lists) {
+        const cameraunlock::input::KeyBindingsParseResult parsed = cameraunlock::input::ParseKeyBindings(*list);
+        Check(parsed.ok(), "the hotkey list '" + *list + "' parses");
+        for (const cameraunlock::input::KeyBinding& b : parsed.bindings) {
+            p.hotkeys.emplace_back(action, b.vk, static_cast<unsigned>(b.modifiers));
+        }
+    }
+    return ObserveOracle(p);
+}
+
 std::vector<std::string> Differences(const Record& a, const Record& b) {
     std::vector<std::string> out;
     for (const auto& [name, value] : a) {
@@ -235,6 +326,97 @@ std::vector<std::string> Differences(const Record& a, const Record& b) {
         if (a.find(name) == a.end()) out.push_back(name + " only on the right");
     }
     return out;
+}
+
+// ---- Rows that follow Defaults.ini ---------------------------------------------------
+//
+// The row a record entry observes, or none for the collision margin, which is
+// not global, and the two local logging rows. start.mode stands for the
+// tracking mode pair.
+
+std::optional<Concept> RowOf(const std::string& entry) {
+    static const std::map<std::string, Concept> rows = {
+        {"field.udp_port", Concept::UdpPort},
+        {"start.enabled", Concept::EnableOnStartup},
+        {"start.world_yaw", Concept::WorldSpaceYaw},
+        {"start.mode", Concept::RotationEnabled},
+        {"field.local_smoothing", Concept::LocalSmoothing},
+        {"field.remote_smoothing", Concept::RemoteSmoothing},
+        {"field.limit_x", Concept::PositionLimitX},
+        {"field.limit_y", Concept::PositionLimitY},
+        {"field.limit_y_down", Concept::PositionLimitYDown},
+        {"field.limit_z", Concept::PositionLimitZ},
+        {"field.limit_z_back", Concept::PositionLimitZBack},
+        {"field.collision_enabled", Concept::CollisionEnabled},
+        {"field.collision_release_smoothing", Concept::CollisionReleaseSmoothing},
+        {"hotkey.Toggle", Concept::ToggleKey},
+        {"hotkey.CycleTrackingMode", Concept::CycleTrackingModeKey},
+        {"hotkey.YawMode", Concept::YawModeKey},
+    };
+    const auto it = rows.find(entry);
+    if (it != rows.end()) return it->second;
+    if (entry == "field.collision_margin" || entry == "field.log_to_file" || entry == "field.log_diagnostics") {
+        return std::nullopt;
+    }
+    throw std::logic_error("no row observes " + entry);
+}
+
+// Every global row the table binds, each of which follows Defaults.ini.
+const std::set<Concept>& AllRows() {
+    static const std::set<Concept> all = {
+        Concept::UdpPort,
+        Concept::EnableOnStartup,
+        Concept::WorldSpaceYaw,
+        Concept::RotationEnabled,
+        Concept::PositionEnabled,
+        Concept::LocalSmoothing,
+        Concept::RemoteSmoothing,
+        Concept::PositionLimitX,
+        Concept::PositionLimitY,
+        Concept::PositionLimitYDown,
+        Concept::PositionLimitZ,
+        Concept::PositionLimitZBack,
+        Concept::CollisionEnabled,
+        Concept::CollisionReleaseSmoothing,
+        Concept::ToggleKey,
+        Concept::CycleTrackingModeKey,
+        Concept::YawModeKey,
+    };
+    return all;
+}
+
+// The rows the player never changed: every entry of the row reads as it does
+// with no file, a18847d's defaults. The mode pair is both rows or neither.
+std::set<Concept> UntouchedRows(const Record& imported, const Record& defaults) {
+    std::set<Concept> changed;
+    for (const auto& [entry, value] : imported) {
+        const std::optional<Concept> row = RowOf(entry);
+        if (row && defaults.at(entry) != value) changed.insert(*row);
+    }
+    if (changed.count(Concept::RotationEnabled)) changed.insert(Concept::PositionEnabled);
+    std::set<Concept> untouched;
+    for (const Concept row : AllRows()) {
+        if (!changed.count(row)) untouched.insert(row);
+    }
+    return untouched;
+}
+
+std::string Names(const std::set<Concept>& rows) {
+    std::string text;
+    for (const Concept row : rows) {
+        text += (text.empty() ? "" : ", ") + std::string(cfg::schema::kConcepts[static_cast<std::size_t>(row)].name);
+    }
+    return text.empty() ? "none" : text;
+}
+
+// What the session runs on over a given Defaults.ini: the import's record, with
+// each row the import left to Defaults.ini as that file gives it.
+Record OverDefaults(Record want, const std::set<Concept>& follows, const Record& defaults_ini) {
+    for (auto& [entry, value] : want) {
+        const std::optional<Concept> row = RowOf(entry);
+        if (row && follows.count(*row)) value = defaults_ini.at(entry);
+    }
+    return want;
 }
 
 // ---- Inputs ------------------------------------------------------------------------
@@ -315,32 +497,311 @@ std::vector<Input> Inputs() {
     return inputs;
 }
 
-// ---- Comparison 1 ---------------------------------------------------------------------
+// ---- Checks on a load ------------------------------------------------------------------
+
+// A file's bytes, last write time and attributes, which no load may change.
+struct FileState {
+    std::string bytes;
+    unsigned long long written = 0;
+    DWORD attributes = 0;
+    bool operator==(const FileState& other) const {
+        return bytes == other.bytes && written == other.written && attributes == other.attributes;
+    }
+};
+
+std::optional<FileState> StateOf(const fs::path& path) {
+    WIN32_FILE_ATTRIBUTE_DATA data{};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data)) {
+        if (GetLastError() == ERROR_FILE_NOT_FOUND) return std::nullopt;
+        throw std::runtime_error("cannot read the attributes of " + path.string());
+    }
+    FileState state;
+    state.bytes = ReadFileBytes(path);
+    state.written = (static_cast<unsigned long long>(data.ftLastWriteTime.dwHighDateTime) << 32) |
+                    data.ftLastWriteTime.dwLowDateTime;
+    state.attributes = data.dwFileAttributes;
+    return state;
+}
+
+bool AsciiCrlf(const std::string& bytes) {
+    for (std::size_t i = 0; i < bytes.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(bytes[i]);
+        if (c > 0x7E) return false;
+        if (c == '\r' && (i + 1 == bytes.size() || bytes[i + 1] != '\n')) return false;
+        if (c == '\n' && (i == 0 || bytes[i - 1] != '\r')) return false;
+        if (c < 0x20 && c != '\r' && c != '\n') return false;
+    }
+    return !bytes.empty() && bytes.back() == '\n';
+}
+
+bool LogSays(const std::vector<std::string>& log, const std::string& text) {
+    return std::any_of(log.begin(), log.end(),
+                       [&](const std::string& line) { return line.find(text) != std::string::npos; });
+}
+
+// What the reader and the table find in a canonical file, read over the table's
+// own defaults, which stand for a Defaults.ini holding the built-in values.
+std::vector<std::string> CanonicalDiagnostics(const std::string& bytes, Config& out) {
+    std::vector<std::string> found;
+    const cfg::CanonicalIni doc = cfg::ParseCanonicalIni(bytes);
+    for (const cfg::CanonicalDiagnostic& d : doc.diagnostics) {
+        found.push_back("reader: " + cfg::DescribeCanonicalDiagnostic(d));
+    }
+    const cfg::ConfigTable<Config> table = config::Table();
+    out = table.defaults();
+    for (const cfg::CanonicalDiagnostic& d : cfg::ApplyCanonical(doc, table, out).diagnostics) {
+        found.push_back("table: " + cfg::DescribeCanonicalDiagnostic(d));
+    }
+    return found;
+}
+
+// A Defaults.ini holding a value other than the built-in one on every global row
+// the table binds, so a migration that wrote `default` where the imported value
+// is not what `default` gives would read back differently over it.
+const char* const kSkewedDefaults =
+    "[CameraUnlock]\r\nConfigFormat=1\r\n\r\n"
+    "[Network]\r\nUdpPort=5353\r\n\r\n"
+    "[General]\r\nEnableOnStartup=false\r\nWorldSpaceYaw=false\r\nRotationEnabled=false\r\n\r\n"
+    "[Smoothing]\r\nLocalSmoothing=0.5\r\nRemoteSmoothing=0.45\r\n\r\n"
+    "[Position]\r\nPositionEnabled=true\r\nPositionLimitX=0.55\r\nPositionLimitY=0.45\r\n"
+    "PositionLimitYDown=0.35\r\nPositionLimitZ=0.65\r\nPositionLimitZBack=0.25\r\n"
+    "CollisionEnabled=false\r\nCollisionReleaseSmoothing=0.5\r\n\r\n"
+    "[Hotkeys]\r\nToggleKey=F8\r\nCycleTrackingModeKey=F9\r\nYawModeKey=F10\r\n";
+
+// The folder beside this executable the migrated files are written to, for
+// lint-migrated.mjs, which CTest runs after this test.
+fs::path MigratedFolder() {
+    std::vector<wchar_t> exe(MAX_PATH);
+    for (;;) {
+        const DWORD length = GetModuleFileNameW(nullptr, exe.data(), static_cast<DWORD>(exe.size()));
+        if (length == 0) throw std::runtime_error("cannot find this executable's path");
+        if (length < exe.size()) return fs::path(std::wstring(exe.data(), length)).parent_path() / "migrated";
+        exe.resize(exe.size() * 2);
+    }
+}
+
+struct Tally {
+    int created = 0;
+    int migrated = 0;
+    std::set<std::string> files;
+};
+
+// Runs the owner's Load in `s`, whose game folder holds the input as
+// HeadTracking.ini or nothing, checks what a load must do beyond comparison 2,
+// and returns the settings the session runs on.
+Config Migrate(const Input& input, const Scratch& s, const std::string& label, Tally& tally) {
+    const std::optional<FileState> legacy_before = StateOf(s.legacy());
+    const cfg::ConfigLoadResult<Config> loaded = cfg::ConfigOwner<Config>(s.Options()).Load();
+    Check(StateOf(s.legacy()) == legacy_before,
+          label + ": a load leaves HeadTracking.ini's bytes, write time and attributes");
+
+    const cfg::ConfigLoadStatus want = input.present ? cfg::ConfigLoadStatus::Migrated : cfg::ConfigLoadStatus::Created;
+    if (loaded.status != want) {
+        std::printf("  %s: %s, %s\n", label.c_str(), cfg::ConfigLoadStatusName(loaded.status), loaded.reason.c_str());
+    }
+    Check(loaded.status == want, label + ": every legacy input imports, and no file gives a created one");
+    if (loaded.status != want) return loaded.config;
+    ++(input.present ? tally.migrated : tally.created);
+    Check(s.Names() == (input.present ? std::set<std::string>{"CameraUnlock.ini", "HeadTracking.ini"}
+                                      : std::set<std::string>{"CameraUnlock.ini"}),
+          label + ": the game folder holds HeadTracking.ini and CameraUnlock.ini and nothing else");
+
+    const std::string migrated = ReadFileBytes(s.canonical());
+    Check(cfg::HasCanonicalStamp(migrated), label + ": CameraUnlock.ini carries the stamp");
+    Check(AsciiCrlf(migrated), label + ": CameraUnlock.ini is ASCII with CRLF line ends");
+    Config reread;
+    const std::vector<std::string> diagnostics = CanonicalDiagnostics(migrated, reread);
+    for (const std::string& d : diagnostics) std::printf("  %s: CameraUnlock.ini, %s\n", label.c_str(), d.c_str());
+    Check(diagnostics.empty(), label + ": CameraUnlock.ini reads with no diagnostic");
+    if (input.present) tally.files.insert(migrated);
+
+    // The next start reads CameraUnlock.ini, imports nothing and writes nothing.
+    const std::optional<FileState> created = StateOf(s.canonical());
+    const cfg::ConfigLoadResult<Config> again = cfg::ConfigOwner<Config>(s.Options()).Load();
+    Check(again.status == cfg::ConfigLoadStatus::Canonical, label + ": the next start reads CameraUnlock.ini");
+    Check(Differences(ObserveCanonical(again.config), ObserveCanonical(loaded.config)).empty(),
+          label + ": the next start runs on the same settings");
+    Check(StateOf(s.canonical()) == created && StateOf(s.legacy()) == legacy_before,
+          label + ": the next start changes neither file");
+    Check(!input.present || LogSays(again.log, "is left as it was and is not read"),
+          label + ": the next start logs that HeadTracking.ini is not read");
+    return loaded.config;
+}
+
+// The file the build shipped and the two inputs with nothing in them: none
+// holds a value a18847d did not ship, so every row follows Defaults.ini and the
+// migration gives the committed file.
+bool IsUnedited(const std::string& name) {
+    return name == kPublishedName || name == "no file" || name == "empty file";
+}
+
+// ---- Comparisons -------------------------------------------------------------------
 
 void Compare(const std::vector<Input>& inputs) {
+    const std::string committed = ReadFileBytes(fs::path(TWHT_SOURCE_DIR) / "HeadTracking.ini");
+    const cfg::ConfigTable<Config> table = config::Table();
     const Record defaults = ObserveImport(legacy::Config{});
+    const Record builtinRecord = ObserveCanonical(table.defaults());
+    {
+        const std::vector<std::string> differ = Differences(defaults, builtinRecord);
+        for (const std::string& d : differ) std::printf("  a18847d's defaults against the built-in values: %s\n", d.c_str());
+        Check(differ.size() == 1 && differ[0].rfind("field.collision_enabled:", 0) == 0,
+              "a18847d's defaults and the built-in values differ in CollisionEnabled alone");
+    }
+    Tally builtin, readonly, skewed;
+    Config skewedConfig;
+    const std::vector<std::string> skewedDiagnostics = CanonicalDiagnostics(kSkewedDefaults, skewedConfig);
+    for (const std::string& d : skewedDiagnostics) std::printf("  the skewed Defaults.ini: %s\n", d.c_str());
+    Check(skewedDiagnostics.empty(), "the skewed Defaults.ini sets every row with no diagnostic");
+    const Record skewedRecord = ObserveCanonical(skewedConfig);
+    {
+        std::set<Concept> differs;
+        for (const auto& [entry, value] : builtinRecord) {
+            const std::optional<Concept> row = RowOf(entry);
+            if (row && skewedRecord.at(entry) != value) differs.insert(*row);
+        }
+        if (differs.count(Concept::RotationEnabled)) differs.insert(Concept::PositionEnabled);
+        Check(differs == AllRows(), "the skewed Defaults.ini differs from the built-in values on every row");
+    }
+    int touched = 0;
+    int modeTouched = 0;
     int compared = 0;
     int changed = 0;
+    int fresh = 0;
     for (const Input& input : inputs) {
         const std::string& name = input.name;
-        Scratch s;
-        if (input.present) s.WriteLegacy(input.bytes);
-        const std::set<std::string> before = s.Names();
-        const Record oracle = ObserveOracle(twht_oracle::Read(s.game().string()));
+
+        // Comparison 1. Both read one copy, which neither writes.
         legacy::Config read;
-        const bool present = read.LoadFromIni(s.legacy().string());
-        Check(present == input.present, name + ": the frozen reader finds the file exactly when it is there");
-        if (!Differences(oracle, defaults).empty()) ++changed;
-        const std::vector<std::string> diff = Differences(oracle, ObserveImport(read));
-        for (const std::string& d : diff) std::printf("  comparison 1, %s: %s\n", name.c_str(), d.c_str());
-        Check(diff.empty(), name + ": comparison 1, the oracle and the import agree");
-        Check(s.Names() == before, name + ": neither reader writes a file");
-        Check(!input.present || ReadFileBytes(s.legacy()) == input.bytes, name + ": neither reader changes the file");
+        Record imported;
+        {
+            Scratch s;
+            if (input.present) s.WriteLegacy(input.bytes);
+            const std::set<std::string> before = s.Names();
+            const Record oracle = ObserveOracle(twht_oracle::Read(s.game().string()));
+            const bool present = read.LoadFromIni(s.legacy().string());
+            Check(present == input.present, name + ": the frozen reader finds the file exactly when it is there");
+            if (!Differences(oracle, defaults).empty()) ++changed;
+            imported = ObserveImport(read);
+            const std::vector<std::string> diff = Differences(oracle, imported);
+            for (const std::string& d : diff) std::printf("  comparison 1, %s: %s\n", name.c_str(), d.c_str());
+            Check(diff.empty(), name + ": comparison 1, the oracle and the import agree");
+            Check(s.Names() == before, name + ": neither reader writes a file");
+            Check(!input.present || ReadFileBytes(s.legacy()) == input.bytes, name + ": neither reader changes the file");
+        }
+
+        // Comparison 2 over a Defaults.ini the owner creates with the built-in
+        // values. The import's own result says what it dropped.
+        cfg::ImportResult result;
+        std::set<Concept> follows;
+        {
+            Scratch s;
+            if (input.present) s.WriteLegacy(input.bytes);
+            Config mapped = table.defaults();
+            result = config::Import().run({s.legacy().wstring(), s.legacy().string(), false}, mapped);
+            Check(result.status == (input.present ? cfg::ImportStatus::Imported : cfg::ImportStatus::Absent),
+                  name + ": the import reads every input, as the published build did");
+            Check(result.dropped.empty() && result.pose_shaping.empty(), name + ": the import drops nothing");
+            follows = std::set<Concept>(result.follows_defaults_ini.begin(), result.follows_defaults_ini.end());
+            Check(follows.size() == result.follows_defaults_ini.size(), name + ": follows_defaults_ini names each row once");
+            const std::set<Concept> untouched = UntouchedRows(imported, defaults);
+            if (follows != untouched) {
+                std::printf("  %s: follows Defaults.ini %s, untouched %s\n", name.c_str(), Names(follows).c_str(),
+                            Names(untouched).c_str());
+            }
+            Check(follows == untouched,
+                  name + ": the rows left to Defaults.ini are exactly the ones the player never changed");
+            if (untouched != AllRows()) ++touched;
+            if (!untouched.count(Concept::RotationEnabled)) ++modeTouched;
+            if (IsUnedited(name)) Check(untouched == AllRows(), name + ": every row follows Defaults.ini");
+            const Record want = OverDefaults(imported, follows, builtinRecord);
+            const Config migrated = Migrate(input, s, name, builtin);
+            const std::vector<std::string> diff = Differences(want, ObserveCanonical(migrated));
+            for (const std::string& d : diff) std::printf("  comparison 2, %s: %s\n", name.c_str(), d.c_str());
+            Check(diff.empty(), name + ": comparison 2, the session runs as the import read, the untouched rows at "
+                                       "the built-in values");
+
+            if (fs::exists(s.canonical())) {
+                Config reread;
+                CanonicalDiagnostics(ReadFileBytes(s.canonical()), reread);
+                Check(Differences(ObserveCanonical(reread), ObserveCanonical(migrated)).empty(),
+                      name + ": CameraUnlock.ini reads back as the settings the session runs on");
+                // Fresh equals upgrade: the file a18847d shipped, seeded and
+                // wrote on a first start, an empty file and no file at all end
+                // as the committed file, `default` on every row.
+                if (IsUnedited(name)) {
+                    Check(ReadFileBytes(s.canonical()) == committed, name + ": gives the committed file, byte for byte");
+                    ++fresh;
+                }
+            }
+        }
+        const Record want = OverDefaults(imported, follows, builtinRecord);
+
+        if (input.present) {
+            // From a read-only HeadTracking.ini, which keeps its attribute. The
+            // import run on its own first leaves the folder as it was.
+            Scratch s;
+            s.WriteLegacy(input.bytes);
+            SetFileAttributesW(s.legacy().c_str(), FILE_ATTRIBUTE_READONLY);
+            const std::set<std::string> before = s.Names();
+            Config unused = table.defaults();
+            config::Import().run({s.legacy().wstring(), s.legacy().string(), false}, unused);
+            Check(s.Names() == before && ReadFileBytes(s.legacy()) == input.bytes,
+                  name + ": the import leaves a read-only folder as it was");
+            const Config c = Migrate(input, s, name + " (read-only)", readonly);
+            Check(Differences(want, ObserveCanonical(c)).empty(),
+                  name + ": a read-only HeadTracking.ini imports as a writable one does");
+            Check((GetFileAttributesW(s.legacy().c_str()) & FILE_ATTRIBUTE_READONLY) != 0,
+                  name + ": HeadTracking.ini keeps its read-only attribute");
+        }
+
+        if (input.present) {
+            // Over a Defaults.ini that differs everywhere: a row the player
+            // never changed is `default` and takes Defaults.ini's value, and a
+            // changed row keeps the player's.
+            Scratch s;
+            s.WriteLegacy(input.bytes);
+            s.WriteDefaults(kSkewedDefaults);
+            const Config c = Migrate(input, s, name + " (skewed Defaults.ini)", skewed);
+            const std::vector<std::string> diff =
+                Differences(OverDefaults(imported, follows, skewedRecord), ObserveCanonical(c));
+            for (const std::string& d : diff) {
+                std::printf("  comparison 2, %s (skewed Defaults.ini): %s\n", name.c_str(), d.c_str());
+            }
+            Check(diff.empty(), name + ": over a Defaults.ini that differs everywhere, the untouched rows take its "
+                                       "values and the changed rows keep the import's");
+            if (fs::exists(s.canonical())) {
+                const std::string migrated = ReadFileBytes(s.canonical());
+                for (const Concept row : follows) {
+                    const std::string key = cfg::schema::kConcepts[static_cast<std::size_t>(row)].key;
+                    Check(migrated.find("\r\n" + key + "=default\r\n") != std::string::npos,
+                          name + " (skewed Defaults.ini): " + key + " is written default");
+                }
+            }
+        }
         ++compared;
     }
-    std::printf("comparison 1: %d inputs, %d of them read as something other than the defaults\n", compared,
+    std::printf("comparisons 1 and 2: %d inputs, %d of them read as something other than the defaults\n", compared,
                 changed);
+    std::printf("over built-in Defaults.ini: %d created, %d migrated; read-only: %d migrated; skewed Defaults.ini: "
+                "%d migrated\n",
+                builtin.created, builtin.migrated, readonly.migrated, skewed.migrated);
+    std::printf("%d inputs changed a row from a18847d's default, %d of them the tracking mode\n", touched, modeTouched);
     Check(changed > 0, "the inputs reach settings other than the defaults");
+    Check(touched > 0 && modeTouched > 0,
+          "the inputs change rows, the tracking mode among them, which then do not follow Defaults.ini");
+    Check(fresh == 3, "the published file, the empty file and no file were held to the committed file");
+
+    // Core's canonical config lint runs over these next (lint-migrated.mjs).
+    std::set<std::string> files = builtin.files;
+    files.insert(readonly.files.begin(), readonly.files.end());
+    files.insert(skewed.files.begin(), skewed.files.end());
+    const fs::path lint = MigratedFolder();
+    fs::remove_all(lint);
+    fs::create_directories(lint);
+    std::size_t n = 0;
+    for (const std::string& file : files) WriteFileBytes(lint / (std::to_string(n++) + ".ini"), file);
+    std::printf("%zu distinct migrated files written to %s\n", files.size(), lint.string().c_str());
 }
 
 // The dev build's first start wrote the file every player of it who installed

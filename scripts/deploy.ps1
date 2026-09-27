@@ -24,16 +24,12 @@ Import-Module (Join-Path $projectRoot 'cameraunlock-core\powershell\ModDeploymen
 Import-Module (Join-Path $projectRoot 'cameraunlock-core\powershell\GamePathDetection.psm1') -Force
 
 $buildOutput = Join-Path $projectRoot "bin\$Configuration"
-$configFile  = Join-Path $projectRoot 'HeadTracking.ini'
 $modDllName  = 'openvr_api.dll'
 $backupName  = 'openvr_api.dll.backup'
 
 $builtDll = Join-Path $buildOutput $modDllName
 if (-not (Test-Path $builtDll)) {
     throw "Build artifact not found at: $builtDll. Run 'pixi run build-release' first."
-}
-if (-not (Test-Path $configFile)) {
-    throw "Config file not found at: $configFile"
 }
 
 if ($GivenPath) {
@@ -61,22 +57,9 @@ if ((Test-Path $existing) -and -not (Test-Path $backup)) {
 
 Copy-Item -Path $builtDll -Destination $existing -Force
 
-# Seeded, not overwritten - the same rule install.cmd follows for this file. A
-# config in the game folder is one somebody tuned there, and re-deploying to try
-# the next build is exactly when they least want it reset.
-$deployedConfig = Join-Path $exeDir 'HeadTracking.ini'
-$seededConfig = -not (Test-Path $deployedConfig)
-if ($seededConfig) {
-    Copy-Item -Path $configFile -Destination $deployedConfig -Force
-} else {
-    Write-Host "HeadTracking.ini already in the game folder - left as it is." -ForegroundColor Yellow
-}
+# No config is copied: the mod creates CameraUnlock.ini beside the game exe on
+# its first start, and imports a HeadTracking.ini an earlier build left there.
 
 Write-Host ""
 Write-Host "Deployed to: $exeDir" -ForegroundColor Green
 Write-Host "  openvr_api.dll   (mod shim)"
-if ($seededConfig) {
-    Write-Host "  HeadTracking.ini (config)"
-} else {
-    Write-Host "  HeadTracking.ini (kept the one already there)"
-}

@@ -26,11 +26,10 @@ set "MOD_VERSION=0.0.0"
 set "STATE_FILE=.headtracking-state.json"
 set "FRAMEWORK_TYPE=None"
 set "SHIM_MARKER=TheWitnessHeadTracking"
-:: Files copied only when they are not already there, so an upgrade keeps
-:: whatever the user tuned. Listing an .ini in MOD_DLLS instead puts it through
-:: the unconditional copy and the shim byte compare, which resets every key on
-:: every update and then records the tuned file as the game original.
-set "MOD_SEED_FILES=HeadTracking.ini"
+:: Files copied only when they are not already there. None: the mod creates
+:: CameraUnlock.ini on its first start, and a seeded one would stop it importing
+:: the HeadTracking.ini an earlier build left.
+set "MOD_SEED_FILES="
 :: Post-install help text. `&echo ` starts each further line.
 set "MOD_CONTROLS=Controls (nav cluster / chord):&echo   End     / Ctrl+Shift+Y  Toggle tracking&echo   PageUp  / Ctrl+Shift+G  Cycle tracking mode&echo   PageDown/ Ctrl+Shift+H  Toggle yaw mode"
 :: Not used by this mod. Set blank so a value another mod's wrapper left in

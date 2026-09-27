@@ -5,39 +5,34 @@
 #include "core/mod.h"
 
 #include "core/debug_log.h"
-#include <cameraunlock/input/chord_hotkeys.h>
+#include <cameraunlock/input/key_binding_registration.h>
+#include <cameraunlock/input/key_bindings.h>
 
 #include <exception>
+#include <functional>
+#include <stdexcept>
+#include <string>
+#include <utility>
 
 namespace TWHT {
 
 namespace {
-// Ctrl+Shift chord letters per the shared T/Y/U/G/H/J cluster convention:
-// Y = toggle tracking, G = cycle tracking mode, H = yaw mode.
-constexpr int kVkY = 'Y';
-constexpr int kVkG = 'G';
-constexpr int kVkH = 'H';
+
+// The table's hotkey codec lets only a list ParseKeyBindings reads into the
+// settings.
+void RegisterList(cameraunlock::input::HotkeyPoller& poller, const std::string& list,
+                  std::function<void()> action) {
+    const cameraunlock::input::KeyBindingsParseResult parsed = cameraunlock::input::ParseKeyBindings(list);
+    if (!parsed.ok()) throw std::logic_error("hotkey list '" + list + "': " + parsed.error);
+    cameraunlock::input::RegisterKeyBindings(poller, parsed.bindings, std::move(action));
+}
+
 } // namespace
 
 void HotkeyHandler::Start(const Config& config) {
-    using cameraunlock::input::ChordGuarded;
-    using cameraunlock::input::NavGuarded;
-
-    const auto toggle     = []() { Mod::Instance().Toggle(); };
-    const auto cycleMode  = []() { Mod::Instance().CycleTrackingMode(); };
-    const auto toggleYaw  = []() { Mod::Instance().ToggleYawMode(); };
-
-    // A key of 0 is a binding the config dropped, because two actions had landed
-    // on it. The chord below still covers the action.
-    if (config.toggleKey != 0) m_poller.SetToggleKey(config.toggleKey, NavGuarded(toggle));
-    if (config.cycleModeKey != 0) m_poller.AddHotkey(config.cycleModeKey, NavGuarded(cycleMode));
-    if (config.toggleYawModeKey != 0) {
-        m_poller.AddHotkey(config.toggleYawModeKey, NavGuarded(toggleYaw));
-    }
-
-    m_poller.AddHotkey(kVkY, ChordGuarded(toggle));
-    m_poller.AddHotkey(kVkG, ChordGuarded(cycleMode));
-    m_poller.AddHotkey(kVkH, ChordGuarded(toggleYaw));
+    RegisterList(m_poller, config.toggleKey, []() { Mod::Instance().Toggle(); });
+    RegisterList(m_poller, config.cycleTrackingModeKey, []() { Mod::Instance().CycleTrackingMode(); });
+    RegisterList(m_poller, config.yawModeKey, []() { Mod::Instance().ToggleYawMode(); });
 
     // Start rethrows whatever the std::thread construction threw, by design, so
     // the mod can say so, and that is not only std::system_error: MSVC
@@ -50,7 +45,7 @@ void HotkeyHandler::Start(const Config& config) {
         m_poller.Start(16);
     } catch (const std::exception& e) {
         HT_LOG("ERROR: could not start the hotkey thread (%s). Hotkeys are off for "
-               "this session; everything in HeadTracking.ini still applies.", e.what());
+               "this session; everything in CameraUnlock.ini still applies.", e.what());
     }
 }
 

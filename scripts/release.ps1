@@ -90,6 +90,11 @@ try {
     exit 1
 }
 
+# Before anything is written: a release below the config descriptor's
+# canonical_since would ship CameraUnlock.ini under a version a launcher reads
+# as a pre-canonical build.
+Assert-ReleaseNotBelowCanonicalSince -RepoRoot $projectRoot -Version $Version
+
 $tag = "v$Version"
 
 # Step 2 - preflight checks (branch, dirty tree, tag)

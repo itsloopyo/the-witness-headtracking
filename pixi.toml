@@ -19,9 +19,17 @@ setup = { cmd = """
 build         = { cmd = "cmake --build build --config Debug",   depends-on = ["setup"] }
 build-release = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
 
-# The characterization tests, the config tests and the config differential
-# test, which holds the frozen HeadTracking.ini reader to the dev build's.
+# The characterization tests, the frozen HeadTracking.ini reader's tests, the
+# CameraUnlock.ini tests, the config differential test, which holds that reader
+# to the dev build's and the migration into CameraUnlock.ini to the reader, and
+# core's canonical config lint over every file that test migrated.
 test = { cmd = "ctest --test-dir build -C Release --output-on-failure", depends-on = ["build-release"] }
+
+# Rewrites HeadTracking.ini, the committed CameraUnlock.ini (the path core's
+# data/config-format.json records), from the config table after a change to a
+# row, a comment or a default, then writes the launcher manifest's config
+# descriptor per_game from it. The canonical_config test fails until it has run.
+render-config = { cmd = "build/Release/twht_canonical_config_tests.exe --render-config HeadTracking.ini && node cameraunlock-core/scripts/encode-seed.mjs", depends-on = ["build-release"] }
 
 deploy  = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy.ps1 Debug",   depends-on = ["build"] }
 install = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy.ps1 Release", depends-on = ["build-release"] }

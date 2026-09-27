@@ -4,7 +4,10 @@
 
 #include "camera/camera_hook.h"
 
-#include <cstring>
+#include <algorithm>
+#include <filesystem>
+#include <stdexcept>
+#include <vector>
 
 namespace TWHT {
 
@@ -17,6 +20,16 @@ Mod& Mod::Instance() {
     // on quit with no crash dump to show for it.
     static Mod* s_instance = new Mod();
     return *s_instance;
+}
+
+static std::filesystem::path WideDirectoryOf(HMODULE hModule) {
+    std::vector<wchar_t> path(MAX_PATH);
+    for (;;) {
+        const DWORD n = GetModuleFileNameW(hModule, path.data(), static_cast<DWORD>(path.size()));
+        if (n == 0) throw std::runtime_error("GetModuleFileNameW failed");
+        if (n < path.size()) return std::filesystem::path(std::wstring(path.data(), n)).parent_path();
+        path.resize(path.size() * 2);
+    }
 }
 
 static std::string DirectoryOf(HMODULE hModule) {
@@ -33,22 +46,11 @@ void Mod::ApplyConfigToSession() {
     // position: the core defaults are 1:1 with no inversion, and that is the
     // pose the tracker sent. Shaping it is the tracker's job.
 
-    // Position pipeline.
-    cameraunlock::PositionSettings pos;
-    pos.limit_x = m_config.posLimitX;
-    // The clamp is [-limit_y_down, +limit_y] and limit_y_down carries its own
-    // default, so mirror the one configured vertical limit the way
-    // PositionSettings::Symmetric does. Left unset, raising LimitY widened the
-    // upward budget only and downward travel stayed pinned at 0.20m.
-    pos.limit_y = m_config.posLimitY;
-    pos.limit_y_down = m_config.posLimitY;
-    pos.limit_z = m_config.posLimitZ;
-    pos.limit_z_back = m_config.posLimitZBack;
     // Through the session rather than straight at the processor: the session
     // owns the two smoothing values, and a raw SetSettings carries this struct's
     // own smoothing fields into the processor instead until the next frame
     // corrects it.
-    m_session.SetPositionSettings(pos);
+    m_session.SetPositionSettings(config::ToPositionSettings(m_config));
     // The core default (0.15) synthesises translation from head rotation to
     // cancel a webcam pivoting in front of the face. Our trackers report
     // position directly, so the term only injects phantom rotation-coupled
@@ -62,9 +64,7 @@ void Mod::ApplyConfigToSession() {
     m_session.SetLocalSmoothing(m_config.localSmoothing);
     m_session.SetRemoteSmoothing(m_config.remoteSmoothing);
 
-    m_session.SetMode(m_config.positionEnabled
-                          ? cameraunlock::TrackingMode::RotationAndPosition
-                          : cameraunlock::TrackingMode::RotationOnly);
+    m_session.SetMode(config::StartupTrackingMode(m_config));
 }
 
 void Mod::StartReceiver() {
@@ -86,27 +86,33 @@ bool Mod::Initialize(HMODULE hModule) {
     m_gameDir = DirectoryOf(hModule);
     if (m_gameDir.empty()) return false;
 
-    const std::string iniPath = m_gameDir + "\\" + kConfigFileName;
-    int seedError = 0;
-    const bool seedFailed = GetFileAttributesA(iniPath.c_str()) == INVALID_FILE_ATTRIBUTES
-                            && !WriteDefaultConfig(iniPath, seedError);
-    const bool configLoaded = m_config.LoadFromIni(iniPath);
+    const cameraunlock::config::ConfigLoadResult<Config> loaded =
+        config::Load(WideDirectoryOf(hModule), cameraunlock::config::DefaultsFile::PerUser());
+    m_config = loaded.config;
 
     if (m_config.logToFile) OpenLogFile();
     HT_LOG("=== %s v%s ===", kModName, kModVersion);
     HT_LOG("Initialize: dir=%s", m_gameDir.c_str());
-    if (seedFailed) {
-        // Named separately from the read failure below, which it causes: "could
-        // not read the ini" sends a user looking for a corrupt file when the
-        // problem is a game directory they cannot write to.
-        HT_LOG("WARN: could not write %s (%s).", iniPath.c_str(), std::strerror(seedError));
+    for (const std::string& w : config::ImportWarnings()) HT_LOG("Config: HeadTracking.ini %s", w.c_str());
+    for (const std::string& line : loaded.log) HT_LOG("Config: %s", line.c_str());
+    if (!loaded.reason.empty()) HT_LOG("Config: %s", loaded.reason.c_str());
+    HT_LOG("Config: %s", cameraunlock::config::ConfigLoadStatusName(loaded.status));
+    if (!config::KeepCollisionMarginInRange(m_config)) {
+        HT_LOG("Config: [Position] CollisionMargin=%g is outside %g to %g, so the lean keeps %g.",
+               loaded.config.collisionMargin, config::kMinCollisionMargin, config::kMaxCollisionMargin,
+               m_config.collisionMargin);
     }
-    if (!configLoaded) {
-        HT_LOG("WARN: could not read %s - using built-in defaults.", iniPath.c_str());
-    }
-    // Parse-time corrections, collected before the log existed.
-    for (const std::string& w : m_config.warnings) {
-        HT_LOG("%s", w.c_str());
+
+    // The clamp allows `hit distance - margin`, so a margin at or above a travel
+    // limit means any surface the sweep does find cancels that axis outright
+    // rather than shortening it. Open ground is unaffected, so this is reported,
+    // not refused.
+    const float smallestLimit = (std::min)({m_config.posLimitX, m_config.posLimitY, m_config.posLimitYDown,
+                                            m_config.posLimitZ, m_config.posLimitZBack});
+    if (m_config.collisionEnabled && m_config.collisionMargin >= smallestLimit) {
+        HT_LOG("WARN: [Position] CollisionMargin=%.2f is not smaller than the smallest position "
+               "limit (%.2f), so against near geometry that lean is cut to nothing rather than "
+               "shortened.", m_config.collisionMargin, smallestLimit);
     }
 
     ApplyConfigToSession();
@@ -116,7 +122,7 @@ bool Mod::Initialize(HMODULE hModule) {
 
     // Before the poller exists, or a key pressed in the gap is overwritten here.
     m_worldSpaceYaw.store(m_config.worldSpaceYaw, std::memory_order_relaxed);
-    m_enabled.store(m_config.autoEnable, std::memory_order_release);
+    m_enabled.store(m_config.enableOnStartup, std::memory_order_release);
 
     m_hotkeys.Start(m_config);
 
@@ -136,7 +142,8 @@ void Mod::SetEnabled(bool enabled) {
 void Mod::Toggle() { SetEnabled(!IsEnabled()); }
 
 void Mod::CycleTrackingMode() {
-    switch (m_session.CycleMode()) {
+    const cameraunlock::TrackingMode mode = m_session.CycleMode();
+    switch (mode) {
     case cameraunlock::TrackingMode::RotationAndPosition:
         HT_LOG("TrackingMode=rotation+position");
         break;
@@ -147,12 +154,14 @@ void Mod::CycleTrackingMode() {
         HT_LOG("TrackingMode=position only");
         break;
     }
+    config::SaveTrackingMode(mode);
 }
 
 void Mod::ToggleYawMode() {
     bool v = !m_worldSpaceYaw.load(std::memory_order_relaxed);
     m_worldSpaceYaw.store(v, std::memory_order_relaxed);
     HT_LOG("WorldSpaceYaw=%s", v ? "true" : "false");
+    config::SaveWorldSpaceYaw(v);
 }
 
 // The receiver names the first packet and any change of tracker source, and the

@@ -5,8 +5,7 @@ namespace TWHT {
 constexpr const char* kModName    = "TheWitnessHeadTracking";
 constexpr const char* kModVersion = "0.0.0";
 
-constexpr const char*    kConfigFileName = "HeadTracking.ini";
-constexpr const wchar_t* kLogFileName    = L"HeadTracking.log";
+constexpr const wchar_t* kLogFileName = L"HeadTracking.log";
 
 // Renamed-original DLL we load and forward OpenVR exports to. The
 // install script renames the stock openvr_api.dll to this name when it

@@ -50,9 +50,9 @@ $env:THE_WITNESS_PATH = "D:\Games\The Witness"
 
 ### Manual Installation
 
-The installer ZIP carries `openvr_api.dll` and `HeadTracking.ini` under
-`plugins\`. Put both into the game folder next to `witness64_d3d11.exe`.
-Rename the `openvr_api.dll` already there to `openvr_api.dll.backup` before
+The installer ZIP carries `openvr_api.dll` under `plugins\`. Put it into the
+game folder next to `witness64_d3d11.exe`. The mod creates `CameraUnlock.ini`
+there the first time it starts. Rename the `openvr_api.dll` already there to `openvr_api.dll.backup` before
 you copy ours over it: the shim chains through that backup to reach the real
 OpenVR entry points, and overwriting it without the rename leaves nothing to
 chain to.
@@ -144,67 +144,125 @@ slope and turning your head sweeps the horizon. Camera-local turns it
 about the camera's own up axis instead, which tips the horizon at steep
 pitches.
 
+The tracking mode and the yaw mode are saved to `CameraUnlock.ini` when you
+change them, and the game starts in the modes you left it in. Turning
+tracking on or off is not saved: the game starts with head tracking on or off
+as `EnableOnStartup` says. Every key above can be rebound in the `[Hotkeys]`
+section of `CameraUnlock.ini`.
+
 ## Configuration
 
-`HeadTracking.ini` lands next to the game executable, alongside
-`witness64_d3d11.exe`, on first install. Edit it and relaunch the game. An
-update leaves whatever you tuned in place.
+<!-- cameraunlock:config -->
+The mod reads its settings from `CameraUnlock.ini` in the game folder, and creates the file when it starts and finds none. Edit it with any text editor.
+
+A setting set to `default` takes its value from `Defaults.ini`, which every head tracking mod that keeps its settings in `CameraUnlock.ini` reads. Head tracking mods that keep their settings in another file do not read it. Writing a value in place of `default` changes that setting for this game only. When the mod saves a setting that a hotkey changed in game, it writes the new value in place of `default`, so that setting no longer follows `Defaults.ini` in this game until you set it to `default` again.
+
+`Defaults.ini` is `%AppData%\CameraUnlock\Defaults.ini` on Windows; `$XDG_CONFIG_HOME/CameraUnlock/Defaults.ini` on Linux, or `~/.config/CameraUnlock/Defaults.ini` where `XDG_CONFIG_HOME` is not set, under Wine and Proton too; and `~/Library/Application Support/CameraUnlock/Defaults.ini` on macOS. The mod's log, where it writes one, names the file it read.
+
+When the mod starts and finds no `Defaults.ini`, it creates one holding the built-in values, unless Windows runs the game as a packaged app. The mod never changes `Defaults.ini` after that. Edit it with any text editor.
+
+The built-in value of each setting set to `default` below:
+
+- `UdpPort=4242`
+- `EnableOnStartup=true`
+- `WorldSpaceYaw=true`
+- `RotationEnabled=true`
+- `LocalSmoothing=0.0`
+- `RemoteSmoothing=0.15`
+- `PositionEnabled=true`
+- `PositionLimitX=0.3`
+- `PositionLimitY=0.2`
+- `PositionLimitYDown=0.2`
+- `PositionLimitZ=0.4`
+- `PositionLimitZBack=0.1`
+- `CollisionEnabled=true`
+- `CollisionReleaseSmoothing=0.9`
+- `ToggleKey=End, Ctrl+Shift+Y`
+- `CycleTrackingModeKey=PageUp, Ctrl+Shift+G`
+- `YawModeKey=PageDown, Ctrl+Shift+H`
+
+With every setting at its default, the file reads:
 
 ```ini
+; The Witness head tracking settings.
+; Comments start with ; and go on their own line. Text after a value is part of the value.
+; Hotkeys are key names such as End, PageUp or Ctrl+Shift+Y. Separate several with commas; leave empty for none.
+; A setting set to default takes its value from Defaults.ini, which every head tracking mod
+; that keeps its settings in CameraUnlock.ini reads: %AppData%\CameraUnlock\Defaults.ini on
+; Windows, $XDG_CONFIG_HOME/CameraUnlock/Defaults.ini (normally ~/.config/CameraUnlock) on
+; Linux, under Wine and Proton too, and ~/Library/Application Support/CameraUnlock/Defaults.ini
+; on macOS. The log names the file it read. Write a value instead of default to change that
+; setting for this game only.
+
+[CameraUnlock]
+; Written by the mod. Leave this section in place.
+ConfigFormat=1
+
 [Network]
-; The tracker port. Listening happens on every interface, so a tracker on
-; another device on your network can reach it.
-UDPPort=4242
-
-[Smoothing]
-; Smoothing applied when the tracker runs on this machine (loopback).
-; 0 = no smoothing, 1 = heavy. Covers rotation and position.
-LocalSmoothing=0.0
-; Smoothing applied when the tracker is a remote device on the network.
-; 0 = no smoothing, 1 = heavy. Covers rotation and position.
-RemoteSmoothing=0.15
-
-[Position]
-; The pose is used exactly as the tracker sends it. There is no sensitivity or
-; axis inversion here for rotation or position - set those in opentrack or your
-; phone app and one profile then behaves the same in every game.
-Enabled=true
-; How far the eye may leave the body, in metres. Forward gets more room than
-; back, which is what stops a backward lean reaching the inside of your head.
-LimitX=0.30
-LimitY=0.20
-LimitZ=0.40
-LimitZBack=0.10
-
-[Collision]
-; Stops a lean putting the view inside a wall. Off until the clamp has been
-; confirmed engaging on real geometry in game.
-CollisionEnabled=false
-; Metres held off a blocking surface. Must be above the near clip (0.06), or the
-; wall is culled and you see through it anyway. Keep it below the Position
-; limits above: at or over one of them, a wall the sweep finds cancels that lean
-; outright instead of shortening it.
-CollisionMargin=0.15
-; How fast the lean reopens once an obstruction clears. 0.9 is 200ms.
-CollisionReleaseSmoothing=0.9
-
-[Hotkeys]
-; Virtual key codes (hex). End=0x23, PageUp=0x21, PageDown=0x22.
-; Ctrl+Shift+Y/G/H chord alternatives are also registered.
-ToggleKey=0x23
-CycleModeKey=0x21
-ToggleYawModeKey=0x22
+; UDP port the mod receives tracker data on (OpenTrack protocol).
+UdpPort=default
 
 [General]
-AutoEnable=true
+; true: head tracking is on when the game starts. ToggleKey turns it on and off.
+EnableOnStartup=default
+; true: yaw turns around the world's up axis. false: around the camera's own up axis.
+WorldSpaceYaw=default
+; true: turning your head turns the view.
+; Tracking mode at startup, with PositionEnabled. The mode hotkey changes both.
+RotationEnabled=default
+; true: write HeadTracking.log beside witness64_d3d11.exe, new at every launch, with the
+; launch before kept as HeadTracking.prev.log. Attach it to a bug report.
 LogToFile=true
-; Yaw mode: true = horizon-locked yaw, false = camera-local.
-; Page Down / Ctrl+Shift+H switches it while the game runs.
-WorldSpaceYaw=true
-; Writes the pose, the rotation and lean applied, and the reticle position
-; about twice a second. For diagnosing a wrong axis.
+; true: HeadTracking.log also gets the pose, the rotation and lean applied, and the
+; reticle position about twice a second. For diagnosing a wrong axis.
 LogDiagnostics=false
+
+[Smoothing]
+; Smoothing when the tracker runs on this PC. 0 is the least, 1 the most.
+LocalSmoothing=default
+; Smoothing when the tracker is another device on the network, such as a phone.
+; 0 is the least, 1 the most.
+RemoteSmoothing=default
+
+[Position]
+; true: moving your head moves the view.
+; Tracking mode at startup, with RotationEnabled. The mode hotkey changes both.
+PositionEnabled=default
+; How far, in metres, leaning left or right can move the view.
+PositionLimitX=default
+; How far, in metres, raising your head can move the view.
+PositionLimitY=default
+; How far, in metres, lowering your head can move the view.
+PositionLimitYDown=default
+; How far, in metres, leaning forward can move the view.
+PositionLimitZ=default
+; How far, in metres, leaning back can move the view.
+PositionLimitZBack=default
+; true: leaning stops at walls instead of moving the view through them.
+CollisionEnabled=default
+; How far, in metres, the view is held off a wall when you lean into it. 0.06 to 10.
+; Below 0.06 the wall is inside the camera's near clip and is not drawn, so you would
+; see through it anyway.
+CollisionMargin=0.15
+; How gently the view eases back out after a wall stopped a lean.
+; 0 is the quickest, 1 the slowest.
+CollisionReleaseSmoothing=default
+
+[Hotkeys]
+; Turns head tracking on and off.
+ToggleKey=default
+; Changes the tracking mode: rotation and position, rotation only, position only.
+CycleTrackingModeKey=default
+; Switches yaw between the world's up axis and the camera's own (WorldSpaceYaw).
+YawModeKey=default
 ```
+<!-- /cameraunlock:config -->
+
+Changes take effect the next time the game starts.
+
+Hotkeys are written as key names, such as `End`, `PageUp`, `F9` or `Ctrl+Shift+Y`, separated by commas. A key with no name can be written as its Windows virtual key code, `0x` and two hex digits, such as `0xBA`. A value the mod cannot read leaves that setting at its default and is named in `HeadTracking.log`.
+
+`CollisionMargin` is used from 0.06 to 10 metres. A value outside that keeps 0.15, and `HeadTracking.log` says so.
 
 With `LogToFile=true` the mod writes `HeadTracking.log` next to the game
 executable. It is rewritten from scratch on every launch, and the previous
@@ -222,9 +280,9 @@ tracker's data is reaching the game.
 - **No tracking response.** The log line `UDP: First UDP packet received`
   is the test. If it is missing, your tracker's data is not reaching the
   mod: check that OpenTrack is started, that its **Output** is **UDP over
-  network** on `127.0.0.1:4242`, and that `[Network] UDPPort` matches.
+  network** on `127.0.0.1:4242`, and that `[Network] UdpPort` matches.
   Tracking is also off if you have pressed `End` / `Ctrl+Shift+Y`, or if
-  `[General] AutoEnable` is `false`.
+  `[General] EnableOnStartup` is `false`.
 - **Jittery or unstable tracking.** Raise the smoothing key that matches
   your tracker: `LocalSmoothing` for a tracker on this machine,
   `RemoteSmoothing` for one on the network. A phone over WiFi usually
@@ -257,8 +315,9 @@ preserved, and the original VR DLL backup is left untouched.
 ## Uninstalling
 
 Run `uninstall.cmd`. It removes the mod DLL, restores the game's original
-`openvr_api.dll` from the backup, and clears `HeadTracking.ini` and the log
-files. `uninstall.cmd /force` removes a mod loader the installer did not put
+`openvr_api.dll` from the backup, and clears the log files. It leaves
+`CameraUnlock.ini`, and a `HeadTracking.ini` an earlier version used, in
+place, so a reinstall keeps your settings. `uninstall.cmd /force` removes a mod loader the installer did not put
 there; this mod installs no loader, so the flag makes no difference here.
 
 ## Building from Source
@@ -298,7 +357,6 @@ MIT License - see [LICENSE](LICENSE) for details.
   passes every call to the game's original DLL, and it carries no OpenVR code.
 - Shared tracking core: [cameraunlock-core](https://github.com/itsloopyo/cameraunlock-core).
 - See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for full attributions.
-
 
 ## Disclaimer
 

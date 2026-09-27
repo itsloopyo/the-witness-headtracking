@@ -26,29 +26,6 @@ set(CAMERAUNLOCK_BUILD_HOOKS ON CACHE BOOL "" FORCE)
 set(CAMERAUNLOCK_BUILD_DISCOVERY ON CACHE BOOL "" FORCE)
 add_subdirectory(cameraunlock-core/cpp ${CMAKE_BINARY_DIR}/cameraunlock-core)
 
-# The shipped HeadTracking.ini, compiled into the DLL as a string so the mod can
-# lay it down when it is missing. There is one copy of the defaults - this file -
-# and it carries its own comments, so a user who ends up without an ini gets the
-# documented one rather than a second, generated file that spells its booleans
-# 1 and 0 and explains nothing. Regenerated whenever the ini changes.
-set(GENERATED_CONFIG_DIR "${CMAKE_BINARY_DIR}/generated")
-set(GENERATED_CONFIG_HEADER "${GENERATED_CONFIG_DIR}/default_config.h")
-file(MAKE_DIRECTORY "${GENERATED_CONFIG_DIR}")
-# file(READ) registers no dependency of its own, so without this the header
-# keeps the ini's old text through every rebuild and the DLL seeds a stale
-# config. configure_file only tracks its .in template.
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-             "${CMAKE_CURRENT_SOURCE_DIR}/HeadTracking.ini")
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/HeadTracking.ini" SHIPPED_INI_TEXT)
-if(SHIPPED_INI_TEXT MATCHES "TWHT_INI")
-    message(FATAL_ERROR "HeadTracking.ini contains the raw-string delimiter TWHT_INI")
-endif()
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/default_config.h.in"
-    "${GENERATED_CONFIG_HEADER}"
-    @ONLY
-)
-
 add_library(TheWitnessHeadTracking SHARED
     src/pch.cpp
     src/dllmain.cpp
@@ -93,7 +70,6 @@ target_link_libraries(TheWitnessHeadTracking PRIVATE
 
 target_include_directories(TheWitnessHeadTracking PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${GENERATED_CONFIG_DIR}
 )
 
 if(MSVC)
@@ -118,20 +94,10 @@ if(THEWITNESS_BUILD_TESTS)
         tests/config_tests.cpp
         src/camera/pose_conversion.cpp
         src/camera/reticle_projection.cpp
-        src/core/config.cpp
         src/legacy_config/legacy_config.cpp
     )
     target_include_directories(the_witness_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${GENERATED_CONFIG_DIR}
-    )
-    # The ini the packager ships is the only source of the defaults, so it is
-    # read directly: a key the guards would correct is a file that warns on
-    # every user's launch, and a value that drifted from the built-in default
-    # would be a setting the file claims to offer and does not.
-    target_compile_definitions(the_witness_tests PRIVATE
-        THEWITNESS_SHIPPED_INI="${CMAKE_CURRENT_SOURCE_DIR}/HeadTracking.ini"
-        THEWITNESS_README="${CMAKE_CURRENT_SOURCE_DIR}/README.md"
     )
     target_link_libraries(the_witness_tests PRIVATE cameraunlock)
     if(MSVC)
@@ -139,10 +105,31 @@ if(THEWITNESS_BUILD_TESTS)
     endif()
     add_test(NAME the_witness_tests COMMAND the_witness_tests)
 
+    # The committed config against the table's fresh render, the fleet's
+    # default hotkeys, the mode cycle's and the yaw toggle's saves, and the
+    # collision margin's range. `twht_canonical_config_tests --render-config
+    # <path>` is pixi run render-config.
+    add_executable(twht_canonical_config_tests
+        tests/canonical_config_tests.cpp
+        src/core/config.cpp
+        src/legacy_config/legacy_config.cpp
+    )
+    target_include_directories(twht_canonical_config_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_compile_definitions(twht_canonical_config_tests PRIVATE
+        TWHT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(twht_canonical_config_tests PRIVATE cameraunlock)
+    if(MSVC)
+        target_compile_options(twht_canonical_config_tests PRIVATE /W4 /WX /MP /wd4324 /EHa)
+    endif()
+    add_test(NAME canonical_config COMMAND twht_canonical_config_tests)
+
     # The canonical config conversion's differential test: the dev build
     # a18847d's reader and startup code (the oracle, compiled from byte copies
     # in tests/config_differential/oracle) against the frozen reader in
-    # src/legacy_config/. The oracle is its own library so its includes resolve
+    # src/legacy_config/, and that against the config owner's migration into
+    # CameraUnlock.ini. The oracle is its own library so its includes resolve
     # to its copies and never to src/.
     set(TWHT_DIFFERENTIAL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tests/config_differential)
     set(TWHT_ORACLE_GENERATED_DIR "${CMAKE_BINARY_DIR}/oracle-generated")
@@ -161,6 +148,7 @@ if(THEWITNESS_BUILD_TESTS)
 
     add_executable(twht_config_differential
         ${TWHT_DIFFERENTIAL_DIR}/differential_tests.cpp
+        src/core/config.cpp
         src/legacy_config/legacy_config.cpp
     )
     target_include_directories(twht_config_differential PRIVATE
@@ -175,6 +163,12 @@ if(THEWITNESS_BUILD_TESTS)
         target_compile_options(twht_config_differential PRIVATE /W4 /WX /MP /wd4324 /EHa /bigobj)
     endif()
     add_test(NAME config_differential COMMAND twht_config_differential)
+    # Core's canonical config lint over the committed file and every file the
+    # differential test migrated, which it writes beside itself under migrated/.
+    add_test(NAME config_lint COMMAND node
+             ${TWHT_DIFFERENTIAL_DIR}/lint-migrated.mjs
+             $<TARGET_FILE_DIR:twht_config_differential>/migrated)
+    set_tests_properties(config_lint PROPERTIES DEPENDS config_differential)
 
     # What the differential test compiles is pinned by hash, line endings aside:
     # the oracle's byte copies must stay a18847d's (git show a18847d:<path>), the

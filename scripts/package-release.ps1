@@ -56,10 +56,8 @@ function Write-StampedManifest {
 
 $buildOutput = Join-Path $projectRoot 'bin\Release'
 $modDll      = Join-Path $buildOutput 'openvr_api.dll'
-$configFile  = Join-Path $projectRoot 'HeadTracking.ini'
 
 if (-not (Test-Path $modDll))     { throw "Missing build output: $modDll" }
-if (-not (Test-Path $configFile)) { throw "Missing config: $configFile" }
 
 $releaseDir = Join-Path $projectRoot 'release'
 if (Test-Path $releaseDir) { Remove-Item -Recurse -Force $releaseDir }
@@ -75,13 +73,10 @@ New-Item -ItemType Directory -Path $instStaging | Out-Null
 # Plugins payload (install-body-shim.cmd copies from .\plugins\ to game exe dir).
 $pluginsDir = Join-Path $instStaging 'plugins'
 New-Item -ItemType Directory -Path $pluginsDir | Out-Null
-Copy-Item $modDll     -Destination (Join-Path $pluginsDir 'openvr_api.dll')   -Force
-# HeadTracking.ini rides in the ZIP for install.cmd to seed (MOD_SEED_FILES) but
-# is deliberately NOT a launcher-manifest `files` row: a manifest row is copied
-# on every deploy, so an update would overwrite a config the player had tuned.
-# The launcher path is covered instead by the DLL, which lays down its compiled
-# copy of this same file when none is next to the game exe.
-Copy-Item $configFile -Destination (Join-Path $pluginsDir 'HeadTracking.ini') -Force
+# No config rides in the ZIP: the mod creates CameraUnlock.ini beside the game
+# exe on its first start, and imports a HeadTracking.ini an earlier build left
+# there.
+Copy-Item $modDll -Destination (Join-Path $pluginsDir 'openvr_api.dll') -Force
 
 # install.cmd and uninstall.cmd are thin wrappers: the body they call lives in
 # shared/ at the ZIP root, and without it the installer aborts at its own layout

@@ -15,3 +15,6 @@
 
 # The differential test's inputs are compared byte for byte.
 tests/config_differential/data/** -text
+
+# The committed CameraUnlock.ini is the table's rendered bytes, CRLF included.
+HeadTracking.ini -text

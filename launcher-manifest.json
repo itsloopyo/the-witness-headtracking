@@ -8,6 +8,14 @@
   "strategy": "Shim",
   "delivery_mode": "manifest",
 
+  "config": {
+    "path": "CameraUnlock.ini",
+    "anchor": "exe_dir",
+    "legacy_source": "HeadTracking.ini",
+    "canonical_since": "0.0.1",
+    "per_game": {}
+  },
+
   "files": [
     { "source": "plugins/openvr_api.dll", "target": "openvr_api.dll", "backup": true }
   ],
