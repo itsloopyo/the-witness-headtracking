@@ -19,6 +19,8 @@ setup = { cmd = """
 build         = { cmd = "cmake --build build --config Debug",   depends-on = ["setup"] }
 build-release = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
 
+# The characterization tests, the config tests and the config differential
+# test, which holds the frozen HeadTracking.ini reader to the dev build's.
 test = { cmd = "ctest --test-dir build -C Release --output-on-failure", depends-on = ["build-release"] }
 
 deploy  = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy.ps1 Debug",   depends-on = ["build"] }
@@ -50,7 +52,13 @@ validate-notices = { cmd = "node cameraunlock-core/scripts/validate-notices.mjs"
 # the fleet's tooling looks for.
 release-nightly = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-nightly.ps1" }
 
-package = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release"] }
+# Depends on test, so no ZIP is built from a tree whose tests or config
+# differential test fail.
+package = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release", "test"] }
 release = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1" }
 
 [dependencies]
+# The build uses the system CMake and Visual Studio. Packaging runs core's config
+# descriptor check (Copy-SharedBundle) with node. Pinned to the release core's
+# own lock resolves.
+nodejs = "==26.5.0"

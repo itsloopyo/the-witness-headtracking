@@ -1,0 +1,42 @@
+# What the differential test compares, and where each file came from.
+# Columns: role, source (commit:path, or the path in this repo), sha256 of the text with CR removed
+# (the data file: of its bytes).
+# The dev pre-release 0.0.0-nightly.20260916.a18847d is the only published build: the repo has no v*
+# tag, and no predecessor repo shipped this mod. a18847d pinned core c480d8a. src/core/config.cpp,
+# src/core/config.h, src/core/constants.h, src/pch.h and cmake/default_config.h.in are byte for byte
+# the same at a18847d and at 4737ab7, the commit the reader was frozen at, and every core source the
+# reader compiles holds the same bytes at c480d8a and at the current pin, so comparison 1 finds no
+# difference.
+# The dev installer ZIP shipped plugins/HeadTracking.ini for install.cmd to seed, its launcher manifest
+# seeded nothing, and its first start with no file wrote kDefaultConfigIni, generated from the repo's
+# HeadTracking.ini. All three are the one committed version of that file, cba9eaa:HeadTracking.ini.
+published reader	a18847d:src/core/config.cpp	f7b1b9f4ef49389ba2b82357496bebde4cdc427465d9bda6486d97fced24110a
+published reader	a18847d:src/core/config.h	d908976938d2269eb08f2eb3267d9c97a37328dc6aaaa2a3710ac53dd71d3847
+published reader	a18847d:src/core/constants.h	76eb71f2862422c59535ffca62b82b8443106c6b84545878bce48a940c92c735
+published reader	a18847d:src/pch.h	0602ee283b91d6d1d57f5e15f7ebee567929ec74d80dceb54be057a4c6c261ba
+published reader	a18847d:cmake/default_config.h.in	ed0913f5257f38602fa2a5197e2979fc518ab3462a1e608da600d4f16085318c
+published startup code	a18847d:src/core/mod.cpp, transcribed in tests/config_differential/oracle/oracle_reader.cpp	2c560eb68e3e4f588b336fd9ee2eb41a284b3697c98462757aa78ec190b0b864
+published startup code	a18847d:src/core/mod.h, transcribed in tests/config_differential/oracle/oracle_reader.cpp	fc0ab13b9672d4707d4a4c7f8b2f040ecce32380b5a2311e9c0fc185b14ab1ab
+published startup code	a18847d:src/input/hotkey_handler.cpp, transcribed in tests/config_differential/oracle/oracle_reader.cpp	bd9fdfdea683ae4cc68698b9ca61a1b63a4d6c4da9632217f5fe9939ff8c8b18
+published startup code	a18847d:src/camera/camera_hook.cpp, transcribed in tests/config_differential/oracle/oracle_reader.cpp	d3e25d1755f54ce0b4e37a5159e1600ac16b6c75531b13c980cc3cafcba06e6b
+published core source	cameraunlock-core c480d8a:cpp/include/cameraunlock/config/ini_reader.h	a7ffb44210ff59672fa97e8e5feaa2cb3e81938fcc0334a384c68bc371b3857a
+published core source	cameraunlock-core c480d8a:cpp/src/config/ini_reader.cpp	e01515c2656aaf533bae4350dc45b702c3e3d4043935743dcc9bd5ea581fbe1c
+published core source	cameraunlock-core c480d8a:cpp/include/cameraunlock/config/value_guards.h	6d3e3512bdfc9ac2a54bee750c5425191bdb4c24f3ae2ea3b9925612e01c78e5
+published core source	cameraunlock-core c480d8a:cpp/src/config/value_guards.cpp	a833ff7f2721f7974ce039a3597349a0974e6695ce3e75e598ce5bf4985a14b1
+published core source	cameraunlock-core c480d8a:cpp/include/cameraunlock/math/finite_utils.h	c59772d698d54ade3374ee1221b74f5563a86d76f0eb34a989ef7efab389c0ad
+published core source	cameraunlock-core c480d8a:cpp/include/cameraunlock/protocol/port_utils.h	91bff564d5e279b66527ec5553afcf4d591812dab0e78f71a48ef412e4db7a44
+published core source	cameraunlock-core c480d8a:cpp/include/cameraunlock/math/smoothing_utils.h	fc2146f8c585e5f610c7234e302f59de4945679cfa28ff479ca47477ec073f22
+published core source	cameraunlock-core c480d8a:cpp/include/cameraunlock/math/angle_utils.h	d7a905270933e3cb0c4c361d29d3fd701655498cbcd1875ea79d180468bdbe6a
+published core source	cameraunlock-core c480d8a:cpp/include/cameraunlock/data/position_settings.h	b24dceb8e25475aebc5a468a5c7362a4a4e64204d183d1408525345f32f547f5
+published core source	cameraunlock-core c480d8a:cpp/include/cameraunlock/camera/lean_clamp.h	a53cf2d4c0060643d2cec5308f0f979bf5868c4f892a62c9bbe4572c427c2a8b
+published core source	cameraunlock-core c480d8a:cpp/include/cameraunlock/math/vec3.h	021c45902da44d12911a7cacd9b76fa28775b382583dca2e5e9df3888e242683
+frozen from	4737ab7:src/core/config.cpp	f7b1b9f4ef49389ba2b82357496bebde4cdc427465d9bda6486d97fced24110a
+frozen from	4737ab7:src/core/config.h	d908976938d2269eb08f2eb3267d9c97a37328dc6aaaa2a3710ac53dd71d3847
+frozen reader	src/legacy_config/legacy_config.h	ddd605b648c954208674180709a4b5e6c5dd483c8e52a073c7faa1941033792f
+frozen reader	src/legacy_config/legacy_config.cpp	93f36cf88d2ffb053e92f1dc134e9a7379bfa42207a5344265e89ff058662da4
+oracle copy	tests/config_differential/oracle/src/core/config.cpp	f7b1b9f4ef49389ba2b82357496bebde4cdc427465d9bda6486d97fced24110a
+oracle copy	tests/config_differential/oracle/src/core/config.h	d908976938d2269eb08f2eb3267d9c97a37328dc6aaaa2a3710ac53dd71d3847
+oracle copy	tests/config_differential/oracle/src/core/constants.h	76eb71f2862422c59535ffca62b82b8443106c6b84545878bce48a940c92c735
+oracle copy	tests/config_differential/oracle/src/pch.h	0602ee283b91d6d1d57f5e15f7ebee567929ec74d80dceb54be057a4c6c261ba
+oracle copy	tests/config_differential/oracle/cmake/default_config.h.in	ed0913f5257f38602fa2a5197e2979fc518ab3462a1e608da600d4f16085318c
+input	cba9eaa:HeadTracking.ini, the dev ZIP's plugins/HeadTracking.ini and a18847d's first-run text: data/headtracking-a18847d.ini	69eef117a87312607efa01931c5516bc2a7828e996a756de1e7e87f012d77c03

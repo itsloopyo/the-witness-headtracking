@@ -1,0 +1,16 @@
+#pragma once
+
+// Generated from HeadTracking.ini at configure time. Do not edit: edit the ini.
+//
+// The mod lays this down when no config file is next to the game exe, which
+// happens when a manual install copies only the DLL, when the user deletes the
+// ini to reset it, and on a launcher install that deploys the payload without
+// the config. One source of the defaults means the file the user then edits is
+// the documented one, comments and all, rather than a second copy free to drift
+// from it in spelling, precision and every explanation it carries.
+
+namespace TWHT {
+
+constexpr const char* kDefaultConfigIni = R"TWHT_INI(@SHIPPED_INI_TEXT@)TWHT_INI";
+
+} // namespace TWHT

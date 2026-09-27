@@ -12,3 +12,6 @@
 *.jpg  binary
 *.gif  binary
 *.ico  binary
+
+# The differential test's inputs are compared byte for byte.
+tests/config_differential/data/** -text
