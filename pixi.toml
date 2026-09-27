@@ -47,12 +47,10 @@ uninstall-all = { cmd = "cmd /c scripts\\uninstall.cmd --force" }
 clean     = { cmd = """powershell -NoProfile -Command "if (Test-Path 'build')   { Remove-Item 'build'   -Recurse -Force }" """ }
 clean-all = { cmd = """powershell -NoProfile -Command "if (Test-Path 'build')   { Remove-Item 'build'   -Recurse -Force }; if (Test-Path 'release') { Remove-Item 'release' -Recurse -Force }" """ }
 
-# The fleet-wide gates. Neither was reachable from this repo, so nothing ran
-# them: conformance covers the install wrapper, the CRLF endings, the action
-# pins and the README rules, and validate-manifest covers launcher-manifest.json
-# against the ZIP it describes. scripts/conformance.ps1 wraps core's and
-# documents the single finding it tolerates.
-conformance = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/conformance.ps1" }
+# The fleet-wide gates: conformance covers the install wrapper, the CRLF
+# endings, the action pins, the README rules and the canonical config, and
+# validate-manifest covers launcher-manifest.json against the ZIP it describes.
+conformance = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File cameraunlock-core/scripts/conformance.ps1 -Repo ." }
 validate-manifest = { cmd = "node cameraunlock-core/scripts/validate-manifest.mjs" }
 validate-notices = { cmd = "node cameraunlock-core/scripts/validate-notices.mjs" }
 
