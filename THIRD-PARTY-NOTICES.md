@@ -12,7 +12,7 @@ The Witness. No game code, no extracted assets and no data files.
 | Component | Version | Licence | How it ships |
 |-----------|---------|---------|--------------|
 | MinHook | v1.3.4, vendored | BSD-2-Clause | Compiled into `openvr_api.dll` |
-| cameraunlock-core | c480d8a8177753966a7d33b857f1db12f5e9fe39 | MIT | Compiled into `openvr_api.dll` |
+| cameraunlock-core | 1ddd4b0130280b7f027a3ff2bb17d57d1f3b857d | MIT | Compiled into `openvr_api.dll` |
 | OpenTrack | n/a | ISC | Not bundled; UDP protocol interoperability only |
 | OpenVR | n/a | BSD-3-Clause | Not bundled; export names and call signatures only |
 
@@ -127,7 +127,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## cameraunlock-core
 
-- **Version:** `c480d8a8177753966a7d33b857f1db12f5e9fe39`
+- **Version:** `1ddd4b0130280b7f027a3ff2bb17d57d1f3b857d`
 - **License:** MIT
 - **Upstream:** https://github.com/itsloopyo/cameraunlock-core
 - **Usage:** Supplies the tracker receiver, the pose processing pipeline and
