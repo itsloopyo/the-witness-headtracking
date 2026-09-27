@@ -123,9 +123,9 @@ void NegativePositionLimitsFallBack() {
     Check(WarnsAbout(config, "LimitX"), "the refused limit is reported");
 }
 
-// IniReader matches a bool against a fixed list of spellings and answers the
-// caller's default for anything else, and GetPrivateProfileStringA leaves an
-// inline comment attached to the value. Silently, until now.
+// The frozen reader matches a bool against a fixed list of spellings and
+// answers the caller's default for anything else, and the Windows profile API
+// under it leaves an inline comment attached to the value.
 void MalformedBoolsAreReported() {
     const TWHT::legacy::Config config = LoadIni("bools",
         "[Collision]\nCollisionEnabled=true ; confirmed on the shed wall\n"
