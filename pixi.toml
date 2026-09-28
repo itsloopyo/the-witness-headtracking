@@ -19,11 +19,14 @@ setup = { cmd = """
 build         = { cmd = "cmake --build build --config Debug",   depends-on = ["setup"] }
 build-release = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
 
-# The characterization tests, the frozen HeadTracking.ini reader's tests, the
-# CameraUnlock.ini tests, the config differential test, which holds that reader
-# to the dev build's and the migration into CameraUnlock.ini to the reader, and
-# core's canonical config lint over every file that test migrated.
-test = { cmd = "ctest --test-dir build -C Release --output-on-failure", depends-on = ["build-release"] }
+# test-unit: the characterization tests, the frozen HeadTracking.ini reader's
+# tests and the CameraUnlock.ini tests. test-differential: the config
+# differential test, which holds that reader to the dev build's and the
+# migration into CameraUnlock.ini to the reader, and core's canonical config
+# lint over every file that test migrated.
+test-unit = { cmd = "ctest --test-dir build -C Release --output-on-failure -LE differential", depends-on = ["build-release"] }
+test-differential = { cmd = "ctest --test-dir build -C Release --output-on-failure --no-tests=error -L differential", depends-on = ["build-release"] }
+test = { depends-on = ["test-unit", "test-differential"] }
 
 # Rewrites HeadTracking.ini, the committed CameraUnlock.ini (the path core's
 # data/config-format.json records), from the config table after a change to a
@@ -58,9 +61,9 @@ validate-notices = { cmd = "node cameraunlock-core/scripts/validate-notices.mjs"
 # the fleet's tooling looks for.
 release-nightly = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-nightly.ps1" }
 
-# Depends on test, so no ZIP is built from a tree whose tests or config
-# differential test fail.
-package = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release", "test"] }
+# Depends on test-unit, so no ZIP is built from a tree whose tests fail. The
+# config differential test runs on the release paths.
+package = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release", "test-unit"] }
 release = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1" }
 
 [dependencies]

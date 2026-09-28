@@ -169,6 +169,7 @@ if(THEWITNESS_BUILD_TESTS)
              ${TWHT_DIFFERENTIAL_DIR}/lint-migrated.mjs
              $<TARGET_FILE_DIR:twht_config_differential>/migrated)
     set_tests_properties(config_lint PROPERTIES DEPENDS config_differential)
+    set_tests_properties(config_differential config_lint PROPERTIES LABELS differential)
 
     # What the differential test compiles is pinned by hash, line endings aside:
     # the oracle's byte copies must stay a18847d's (git show a18847d:<path>), the
