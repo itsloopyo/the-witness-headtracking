@@ -38,22 +38,6 @@ $projectRoot = Split-Path -Parent $scriptDir
 
 Import-Module (Join-Path $projectRoot 'cameraunlock-core\powershell\ReleaseWorkflow.psm1') -Force
 
-# Mirrors New-ChangelogFromCommits' insertion so a -Force maintenance entry
-# lands in the same place with the same shape.
-function Add-MaintenanceChangelogEntry {
-    param([string]$Path, [string]$NewVersion)
-    $date = Get-Date -Format 'yyyy-MM-dd'
-    $entry = "## [$NewVersion] - $date`n`n### Changed`n`n- Maintenance release (no user-facing changes).`n`n"
-    $changelog = Get-Content $Path -Raw
-    if ($changelog -match '(?s)(# Changelog.*?)(## \[)') {
-        $changelog = $changelog -replace '(?s)(# Changelog.*?\n\n)', "`$1$entry"
-    } else {
-        $changelog = $changelog -replace '(?s)(# Changelog.*?\n)', "`$1$entry"
-    }
-    $changelog = $changelog.TrimEnd() + "`n"
-    Set-Content $Path $changelog -NoNewline
-}
-
 $manifestPath  = Join-Path $projectRoot 'launcher-manifest.json'
 $cmakePath     = Join-Path $projectRoot 'CMakeLists.txt'
 $installCmd    = Join-Path $projectRoot 'scripts\install.cmd'
@@ -137,47 +121,18 @@ Write-Host ''
 # any version files so an abort here leaves the working tree clean instead
 # of stranding a half-applied version bump with no tag.
 Write-Host 'Generating CHANGELOG from commits...' -ForegroundColor Cyan
-# A repo with no tags yet, carrying a hand-written entry for a version that was
-# never released, is the one case New-ChangelogFromCommits cannot get right on
-# its own: it would prepend a second entry, in developer language, restating for
-# a new version number what the entry below it already says for players. Caught
-# here rather than discovered in the published release notes.
-# Release tags only. The nightly publishes a rolling `dev` tag, and counting it
-# would skip this guard on exactly the repo state it is for - while
-# New-ChangelogFromCommits, which matches 'v[0-9]*', would still take its
-# no-previous-release path and generate the duplicate entry.
-$hasTags = @(git -C $projectRoot tag -l 'v[0-9]*').Where({ $_ })
-if ($hasTags.Count -eq 0) {
-    $existing = [regex]::Match((Get-Content $changelogPath -Raw), '(?m)^##\s*\[([^\]]+)\]')
-    if ($existing.Success -and $existing.Groups[1].Value -ne $Version) {
-        throw ("CHANGELOG.md already has a hand-written [$($existing.Groups[1].Value)] entry " +
-               "and this repo has no tags, so releasing $Version would add a second entry for " +
-               "the same work. Relabel that entry to [$Version] and re-run, or delete it to " +
-               "generate one from the commits.")
-    }
-}
-
-# No special case for generating the first entry. There used to be one, and it
-# called Set-Content on the whole file - so the first release this repo ever
-# cut would have replaced a hand-written entry with the words "First release."
-# and packaged that into the ZIP. New-ChangelogFromCommits handles a repo with
-# no tags on its own (it falls back to reading every commit), and it refuses to
-# duplicate an entry that already exists for this version.
 try {
     $changelogArgs = @{
         ChangelogPath = $changelogPath
         Version       = $Version
         ArtifactPaths = @('src/', 'cameraunlock-core', 'scripts/install.cmd', 'scripts/uninstall.cmd')
+        Maintenance   = [bool]$Force
     }
     New-ChangelogFromCommits @changelogArgs | Out-Null
 } catch {
-    if (-not $Force) {
-        Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host 'No user-facing changes to release. Re-run with -Force for a maintenance release.' -ForegroundColor Yellow
-        exit 1
-    }
-    Write-Host 'No user-facing commits since last tag - writing maintenance entry (-Force).' -ForegroundColor Yellow
-    Add-MaintenanceChangelogEntry -Path $changelogPath -NewVersion $Version
+    Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host 'No user-facing changes to release. Re-run with -Force for a maintenance release.' -ForegroundColor Yellow
+    exit 1
 }
 
 # Step 4 - bump version in launcher-manifest.json, CMakeLists.txt, install.cmd.
